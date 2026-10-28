@@ -1,0 +1,12 @@
+# Local runs of the gate and Python caches
+.ai-review-run/
+__pycache__/
+*.pyc
+
+# Secrets never belong here
+.env
+.env.*
+!.env.example
+
+# Reviewer notes drafted before install
+_gate/

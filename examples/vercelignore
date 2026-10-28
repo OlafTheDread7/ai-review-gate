@@ -1,0 +1,7 @@
+/.github
+/.gitattributes
+*.md
+/docs
+/Claude outputs
+*.ps1
+*.bat

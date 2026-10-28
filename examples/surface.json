@@ -1,0 +1,8 @@
+{
+  "host": "auto",
+  "root": "",
+  "output_dir": "",
+  "static_dirs": ["static"],
+  "publish": ["data/public-dataset.csv"],
+  "issues": true
+}
