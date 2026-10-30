@@ -1,26 +1,26 @@
 # AI Review gate
 
-A GitHub Action that has Claude review every push to `main` for security and architecture problems, and holds the deploy until it passes. I run it on more than 30 of my own repos: static sites on Vercel, Flask and Node apps on Railway.
+A GitHub Action for AI code review. Claude reviews every push to `main` for security and architecture problems, and the deploy waits until it passes. I run it on more than 30 of my own repos: static sites on Vercel, Flask and Node apps on Railway.
 
-I push straight to `main` with no pull requests, so there was no review step anywhere. This puts one between the push and production. Vercel's Deployment Checks and Railway's "Wait for CI" won't ship a commit until this check is green.
+I push straight to `main`, no pull requests. That left me with no review step between a push and production. This adds one. Vercel Deployment Checks and Railway "Wait for CI" won't ship a commit until this check is green.
 
 ## What runs on each push
 
-1. **Scope.** `prepare.sh` works out what to review: everything since the last commit that passed. A blocked change stays in the diff until it's fixed, so pushing something unrelated on top doesn't sneak it through.
+1. **Scope.** `prepare.sh` works out what to review: everything since the last commit that passed. A blocked change stays in the diff until it's fixed. Pushing something unrelated on top won't sneak it through.
 2. **Plain checks, no AI** (`checks.py`, a few seconds):
-   - **Publish check.** Works out the host (static Vercel site, Vercel build, Railway or another server) and lists the files the deploy would serve. It flags review notes, Markdown, `docs/`, secret files, databases, exports and scripts that would go live.
-   - **Secret scan.** gitleaks over the new commits, with an allow-list for keys that are public on purpose (Stripe publishable, form and captcha site keys).
-   - **Dependency audit.** `npm audit` for lockfiles, and the OSV database for pinned Python packages.
-3. **The AI review.** Claude Code reads the diff and the code around it, with read-only tools, against the rubric in `REVIEW.md`: injection, XSS, SSRF, auth, secrets, data integrity on money paths, and broken contracts. It returns findings as JSON with a severity, a file and line, and a fix.
-4. **The verdict** (`enforce.py`). Critical or high from either side holds the deploy. So does a missing result: if the checks or the review don't report, nothing ships. Findings go to the job summary and as annotations on the files, and new critical, high and medium ones each open a GitHub issue.
+   - **Publish check.** Detects the host (static Vercel site, Vercel build, Railway or another server) and lists the files the deploy would serve. It flags review notes, Markdown, `docs/`, secret files, databases, exports and scripts that would go live.
+   - **Secret scan.** Runs gitleaks over the new commits, with an allow-list for keys that are public on purpose (Stripe publishable, form and captcha site keys).
+   - **Dependency audit.** Uses `npm audit` for lockfiles, and the OSV database for pinned Python packages.
+3. **The AI review.** Claude Code reads the diff and the code around it using read-only tools. It checks against the rubric in `REVIEW.md`: injection, XSS, SSRF, auth, secrets, data integrity on money paths, and broken contracts. Findings come back as JSON with a severity, a file and line, and a fix.
+4. **The verdict** (`enforce.py`). Critical or high findings from either side hold the deploy. A missing result holds it too. If the checks or the review don't report, nothing ships. Findings go in the job summary and appear as annotations on the files. Each new critical, high or medium finding also opens a GitHub issue.
 
 Pushes that only touch images and fonts, or only the gate's own files, skip the AI review. The plain checks still run.
 
 ## Install
 
-You need a Claude subscription token in the repo's secrets: run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <owner>/<repo>`. Set it before your first push with the gate, or that first run fails and holds the deploy.
+Set the repo's Claude subscription token secret before your first push with the gate. Run `claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo <owner>/<repo>`. Without it, that first run fails and holds the deploy.
 
-`files/github/` mirrors a repo's `.github` folder. The installers copy it in and never touch your own `CONTEXT.md` or `surface.json` unless you pass them. Both preview first.
+`files/github/` mirrors a repo's `.github` folder. The installers copy it in. They leave your own `CONTEXT.md` and `surface.json` alone unless you pass them. Both preview first.
 
 Windows (PowerShell):
 
@@ -44,7 +44,7 @@ Then commit the `.github` files, push, and turn on the deploy hold:
 
 ## Per-repo files
 
-- **`.github/ai-review/CONTEXT.md`**: notes for the reviewer. What the project is, its entry points, where money and customer data go, environment variable names, and what's public on purpose. There's an example in `examples/CONTEXT.md`. This is what keeps the review from flagging things you meant to do.
+- **`.github/ai-review/CONTEXT.md`**: notes for the reviewer. What the project is, its entry points, where money and customer data go, environment variable names, and what's public on purpose. See `examples/CONTEXT.md` for an example. These notes keep the review from flagging things you meant to do.
 - **`.github/ai-review/surface.json`**: settings, all optional:
 
 ```json
@@ -58,9 +58,9 @@ Then commit the `.github` files, push, and turn on the deploy hold:
 }
 ```
 
-`host` overrides the detection (`vercel-static`, `vercel-output`, `vercel-build`, `railway`, `server`, `none`). `root` is the subfolder Vercel deploys from. `publish` lists files that are meant to go live. `"issues": false` stops the gate opening GitHub issues, which I use on public repos. On a public repo the run's job summary is public either way.
+`host` overrides detection (`vercel-static`, `vercel-output`, `vercel-build`, `railway`, `server`, `none`). `root` is the subfolder Vercel deploys from. `publish` lists files that are meant to go live. `"issues": false` stops the gate from opening GitHub issues. I use that on public repos. The run's job summary is still public on a public repo, either way.
 
-Every static site on Vercel should have a `.vercelignore` so notes and CI files don't get served. The one I use is in `examples/vercelignore`.
+Every static site on Vercel should have a `.vercelignore` so notes and CI files don't get served. Mine is in `examples/vercelignore`.
 
 ## Severity
 
@@ -71,7 +71,7 @@ Every static site on Vercel should have a `.vercelignore` so notes and CI files 
 | medium | no | yes | a weakness that needs an unusual condition, a dependency audit that couldn't reach its database |
 | low | no | no | hardening worth doing eventually |
 
-A dependency database that's down is reported as medium on purpose, so an outage somewhere else doesn't hold every deploy.
+A dependency database outage is medium on purpose. An outage somewhere else shouldn't hold every deploy.
 
 ## Tests
 
@@ -79,11 +79,11 @@ A dependency database that's down is reported as medium on purpose, so an outage
 python -m unittest discover -s tests -v
 ```
 
-They build throwaway repos and run `checks.py`, `enforce.py` and `prepare.sh` against them the way the workflow does. Standard library only. Needs git and bash.
+The tests build throwaway repos and run `checks.py`, `enforce.py` and `prepare.sh` against them the way the workflow does. Standard library only. Needs git and bash.
 
 ## Limits
 
-- It reviews what changed since the last pass, not the whole codebase. Run the workflow by hand with `whole-repo` for a full audit.
+- It reviews changes since the last pass, not the whole codebase. For a full audit, run the workflow by hand with `whole-repo`.
 - The publish check reads the repo, not the live site. Check the live site yourself after the first deploy (`/.github/ai-review/CONTEXT.md` should be a 404).
 - Claude can miss things and can be wrong. It's a gate, not a guarantee.
 
